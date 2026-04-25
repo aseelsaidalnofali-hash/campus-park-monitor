@@ -2,168 +2,264 @@ from __future__ import annotations
 
 import random
 from dataclasses import dataclass
-from typing import Dict, List, Tuple
+from typing import List
 
-import pandas as pd
 import streamlit as st
 
-# -----------------------------
-# Page Config
-# -----------------------------
+
 st.set_page_config(
     page_title="CampusPark Smart Monitor",
     page_icon="🅿️",
     layout="wide",
 )
 
-# -----------------------------
-# Styling (FIXED)
-# -----------------------------
-st.markdown("""
-<style>
-.main {background-color: #f6f8fb;}
 
+st.markdown(
+    """
+<style>
 .app-title {
-    font-size: 2rem;
+    font-size: 2.2rem;
     font-weight: 800;
     color: #12324a;
+    margin-bottom: 0.2rem;
 }
 
 .subtitle {
     color: #5b6777;
-    margin-bottom: 1rem;
-}
-
-.metric-card {
-    background: white;
-    border-radius: 18px;
-    padding: 18px;
-    box-shadow: 0 4px 18px rgba(0,0,0,0.06);
-}
-
-.metric-value {
-    font-size: 1.8rem;
-    font-weight: bold;
+    margin-bottom: 1.5rem;
 }
 
 .spot-grid {
     display: grid;
     grid-template-columns: repeat(5, 1fr);
-    gap: 10px;
+    gap: 12px;
+    margin-bottom: 25px;
 }
 
 .spot {
+    border-radius: 14px;
+    min-height: 80px;
     padding: 10px;
-    border-radius: 10px;
-    text-align: center;
-    font-weight: bold;
+    font-weight: 800;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
 }
 
-.empty {background: #c9f7d1;}
-.occupied {background: #ffd5d5;}
-.reserved {background: #ffe9b8;}
-.best {border: 3px solid green;}
+.empty {
+    background-color: #c9f7d1;
+}
+
+.occupied {
+    background-color: #ffd5d5;
+}
+
+.reserved {
+    background-color: #ffe9b8;
+}
+
+.best {
+    border: 4px solid #0f5c35;
+}
+
+.metric-box {
+    background: white;
+    border-radius: 18px;
+    padding: 18px;
+    box-shadow: 0 4px 18px rgba(0,0,0,0.06);
+    border: 1px solid #edf1f5;
+    margin-bottom: 20px;
+}
 </style>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
 
-# -----------------------------
-# Data Models
-# -----------------------------
 @dataclass
 class ParkingSpot:
     spot_id: str
     status: str
-    distance: int
+    distance_m: int
 
 
 @dataclass
 class ParkingZone:
     zone_id: str
     name: str
-    x: int
-    y: int
     spots: List[ParkingSpot]
 
 
-USER_LOCATIONS = {
-    "Main Gate": (0, 0),
-    "Engineering Block": (8, 2),
-    "Library": (2, 4),
-}
+def generate_data() -> List[ParkingZone]:
+    random.seed(7)
 
-# -----------------------------
-# Functions
-# -----------------------------
-def generate_data():
     zones = []
-    for z in range(3):
+
+    zone_names = [
+        "North Parking",
+        "Central Parking",
+        "Engineering Parking",
+        "Library Parking",
+        "Medical Parking",
+    ]
+
+    for z, name in enumerate(zone_names):
         spots = []
-        for i in range(15):
-            status = random.choice(["empty", "occupied", "reserved"])
-            spots.append(ParkingSpot(f"{z}-{i}", status, random.randint(30, 200)))
-        zones.append(ParkingZone(str(z), f"Zone {z}", z*3, z*2, spots))
+
+        for i in range(1, 16):
+            status = random.choices(
+                ["empty", "occupied", "reserved"],
+                weights=[0.35, 0.55, 0.10],
+                k=1,
+            )[0]
+
+            spots.append(
+                ParkingSpot(
+                    spot_id=f"{chr(65 + z)}-{i:02d}",
+                    status=status,
+                    distance_m=random.randint(30, 250),
+                )
+            )
+
+        zones.append(
+            ParkingZone(
+                zone_id=chr(65 + z),
+                name=name,
+                spots=spots,
+            )
+        )
+
     return zones
 
 
-def best_spot(zones):
-    candidates = []
+def find_best_spot(zones: List[ParkingZone]):
+    empty_spots = []
+
     for zone in zones:
-        for s in zone.spots:
-            if s.status == "empty":
-                score = s.distance
-                candidates.append((score, zone, s))
-    if not candidates:
+        for spot in zone.spots:
+            if spot.status == "empty":
+                empty_spots.append((spot.distance_m, zone, spot))
+
+    if not empty_spots:
         return None
-    return sorted(candidates)[0]
+
+    return sorted(empty_spots, key=lambda x: x[0])[0]
 
 
-# -----------------------------
-# App
-# -----------------------------
-zones = generate_data()
+def status_icon(status: str) -> str:
+    if status == "empty":
+        return "🟢"
+    if status == "occupied":
+        return "🔴"
+    return "🟡"
 
-st.markdown(
-    '<div class="app-title">CampusPark Smart Monitor</div>',
-    unsafe_allow_html=True
-)
 
-st.markdown(
-    '<div class="subtitle">Smart parking dashboard</div>',
-    unsafe_allow_html=True
-)
-
-best = best_spot(zones)
-
-# -----------------------------
-# Display zones
-# -----------------------------
-for zone in zones:
-    st.markdown(f"### {zone.name}")
-
+def render_zone(zone: ParkingZone, best_spot_id: str | None):
     html = '<div class="spot-grid">'
 
-    for s in zone.spots:
-        cls = s.status
-        extra = " best" if best and s == best[2] else ""
+    for spot in zone.spots:
+        best_class = " best" if spot.spot_id == best_spot_id else ""
 
-        html += f"""
-        <div class="spot {cls}{extra}">
-            {s.spot_id}<br>{s.status}
-        </div>
-        """
+        html += (
+            f'<div class="spot {spot.status}{best_class}">'
+            f'<div>{spot.spot_id}</div>'
+            f'<div>{status_icon(spot.status)} {spot.status.title()}</div>'
+            f'</div>'
+        )
 
     html += "</div>"
 
     st.markdown(html, unsafe_allow_html=True)
 
 
-# -----------------------------
-# Best spot
-# -----------------------------
-st.markdown("### Best Spot")
+zones = generate_data()
+best = find_best_spot(zones)
+
+st.markdown(
+    '<div class="app-title">CampusPark Smart Monitor</div>',
+    unsafe_allow_html=True,
+)
+
+st.markdown(
+    '<div class="subtitle">Smart parking dashboard for real-time availability and best-spot recommendation.</div>',
+    unsafe_allow_html=True,
+)
+
+with st.sidebar:
+    st.header("Controls")
+    selected_location = st.selectbox(
+        "Current user location",
+        ["Main Gate", "Library", "Engineering Block", "Medical College", "Student Center"],
+    )
+
+    selected_zone = st.selectbox(
+        "Selected parking zone",
+        [zone.name for zone in zones],
+    )
+
+    if st.button("🔄 Refresh live data"):
+        st.rerun()
+
+    st.markdown("---")
+    st.markdown("### Suggested full system stack")
+    st.write("**Frontend:** Streamlit")
+    st.write("**Backend:** FastAPI / Flask")
+    st.write("**Database:** PostgreSQL")
+    st.write("**IoT:** ESP32 + sensors")
+    st.write("**AI:** YOLO / OpenCV")
+
+total_spots = sum(len(zone.spots) for zone in zones)
+available_spots = sum(
+    1 for zone in zones for spot in zone.spots if spot.status == "empty"
+)
+
+c1, c2, c3 = st.columns(3)
+
+with c1:
+    st.markdown(
+        f'<div class="metric-box"><h4>Total Parking Capacity</h4><h2>{total_spots}</h2></div>',
+        unsafe_allow_html=True,
+    )
+
+with c2:
+    st.markdown(
+        f'<div class="metric-box"><h4>Available Spots</h4><h2>{available_spots}</h2></div>',
+        unsafe_allow_html=True,
+    )
+
+with c3:
+    if best:
+        st.markdown(
+            f'<div class="metric-box"><h4>Best Spot</h4><h2>{best[2].spot_id}</h2></div>',
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            '<div class="metric-box"><h4>Best Spot</h4><h2>None</h2></div>',
+            unsafe_allow_html=True,
+        )
+
+st.markdown("## Smart Parking Visualization Map")
+
+st.markdown(
+    "🟢 Empty &nbsp;&nbsp; 🔴 Occupied &nbsp;&nbsp; 🟡 Reserved &nbsp;&nbsp; ⭐ Best Spot",
+    unsafe_allow_html=True,
+)
+
+best_spot_id = best[2].spot_id if best else None
+
+for zone in zones:
+    st.markdown(f"### {zone.name}")
+    render_zone(zone, best_spot_id)
+
+st.markdown("## Best Available Spot")
 
 if best:
-    st.success(f"Recommended: {best[2].spot_id} in {best[1].name}")
+    distance, zone, spot = best
+    st.success(f"Recommended spot: {spot.spot_id}")
+    st.write(f"**Zone:** {zone.name}")
+    st.write(f"**Distance:** {distance} m")
 else:
-    st.error("No available spots")
+    st.error("No empty spots available right now.")
